@@ -4,8 +4,9 @@ import socket # For socket programming
 import time # For getting time for filename generation
 
 class Server: # requires socket
-    def __init__(self, server_port):
+    def __init__(self, listen_ip, server_port):
         self.server_port = server_port
+        self.listen_ip = listen_ip
         self.buffer_size = 4096
         self._generate_board_list() # Generate dict of boards
         self._bind() # Bind to server_port
@@ -21,7 +22,7 @@ class Server: # requires socket
     def _bind(self):
         print(f"Creating socket at port {self.server_port}.. ", end='')
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind(('', self.server_port))
+        self.server_socket.bind((self.listen_ip, self.server_port))
         print("Done.")
 
     def listen(self):
@@ -142,4 +143,4 @@ class Server: # requires socket
             return "UNKNOWN_COMMAND"
 
 if __name__ == '__main__':
-    server = Server(9999)
+    server = Server(sys.argv[1], int(sys.argv[2])) # validate this.
