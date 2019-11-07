@@ -62,5 +62,8 @@ def connect(server_ip, server_port):
     client_socket.connect((server_ip, server_port))
     return client_socket
 
+def display_menu(server_ip, server_port):
+    socket = connect(server_ip, server_port)
+
 if __name__ == '__main__':
-    pass
+    display_menu(sys.argv[1], sys.argv[2])
