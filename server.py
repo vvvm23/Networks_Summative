@@ -1,19 +1,18 @@
 import sys # Get system arguments.
-import os
-import socket
-import time
+import os # For getting list of dirs and files
+import socket # For socket programming
+import time # For getting time for filename generation
 
 class Server: # requires socket
     def __init__(self, server_port):
         self.server_port = server_port
         self.buffer_size = 4096
-        self._generate_board_list()
-        self._bind()
+        self._generate_board_list() # Generate dict of boards
+        self._bind() # Bind to server_port
 
     def _generate_board_list(self):
         self.board_list = {}
         for root, dirs, _ in os.walk('./board/'):
-        #root, dirs, _ = os.walk("./board/")
             for d in dirs:
                 self.board_list[f"{d}".replace('_', ' ')] = f"{root}{d}/"
             break
@@ -41,16 +40,17 @@ class Server: # requires socket
             code = self.handle(connection_socket)
             if not code == "SUCCESS":
                 print(f"ERROR:\t\t{code}")
-            
             connection_socket.close()
+            print(f"Closed connection from {address}")
 
     def handle(self, connection_socket):
+        # Receive and split incoming message
         request_string = connection_socket.recv(self.buffer_size).decode()
         request_fields = request_string.split(';')
 
         response = ""
 
-        nb_req_fields = len(request_fields)
+        nb_req_fields = len(request_fields) # Fpr checking in nb. parameters correct
         command = request_fields[0]
 
         if command == "GET_BOARDS":
@@ -61,6 +61,7 @@ class Server: # requires socket
                 return "INVALID_NB_REQ"
 
             response += "SUCCESS"
+            # Iterate through board titles and add to response. Delimit with ;
             for title in self.board_list:
                 response += f";{title}"
 
@@ -87,12 +88,13 @@ class Server: # requires socket
             # TODO: Sort by most recent 100
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
                 for i, f in enumerate(files):
+                    # Open file and add contents to response. Then close file.
                     f = f"{root}{self.board_list[board_title]}{f}"
                     fh = open(f)
                     f_contents = fh.read()
                     fh.close()
 
-                    message_title = f.split('-')[2]
+                    message_title = f.split('-')[2] # Append title before contents delimited with '-'
                     response += f";{message_title}-{f_contents}"
 
                     if i > 99:
@@ -103,7 +105,7 @@ class Server: # requires socket
             return "SUCCESS"
 
         elif command == "POST_MESSAGE":
-            if not nb_req_fields == 4: #maybe remove for ; in message? or make <
+            if not nb_req_fields == 4: #maybe remove for ; in message? or make < and concat further fields
                 print("ERROR\t\tInvalid number of fields in request!")
                 response = f"FAIL;Invalid number of fields for POST_MESSAGE. Expected 4 got {nb_req_fields}"
                 connection_socket.send(response.encode())
@@ -121,8 +123,11 @@ class Server: # requires socket
             message_title = request_fields[2].replace(' ', '_')
             message = request_fields[3] # sanitise this
 
+            # Format filename as requested
             file_time = time.strftime("%Y%m%d-%H%M%S")
             file_name = f"{file_time}-{message_title}"
+
+            # Create and write message to file. Then close.
             fh.open(f"./board/{self.board_list[board_title]}{file_name}")
             fh.write(message)
             fh.close()
