@@ -4,8 +4,13 @@ import socket # For socket programming
 import time # For getting time for filename generation
 
 class Logger:
-    def __init__(self):
-        pass
+    def __init__(self, log_file):
+        self.log_file = log_file
+
+    def write(self, command, success, address, port):
+        f = open(self.log_file, mode='a')
+        f.write(f"{address}:{port}\t{time.strftime('%d/%m/%Y %H:%M:%S')}\t{command}\t{'OK' if success else 'Error'}\n")
+        f.close()
 
 class Server: # requires socket
     def __init__(self, listen_ip, server_port):
@@ -14,6 +19,7 @@ class Server: # requires socket
         self.buffer_size = 4096
         self._generate_board_list() # Generate dict of boards
         self._bind() # Bind to server_port
+        self.logger = Logger("server.log")
 
     def _generate_board_list(self):
         self.board_list = {}
@@ -63,6 +69,7 @@ class Server: # requires socket
                 print("ERROR:\t\tInvalid number of fields in request!")
                 response = f"FAIL;Invalid number of fields for GET_BOARDS. Expected 1 got {nb_req_fields}"
                 connection_socket.send(response.encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
             response += "SUCCESS"
@@ -71,6 +78,7 @@ class Server: # requires socket
                 response += f";{title}"
 
             connection_socket.send(response.encode())
+            self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         elif command == "GET_MESSAGES":
@@ -78,6 +86,7 @@ class Server: # requires socket
                 print("ERROR\t\tInvalid number of fields in request!")
                 response = f"FAIL;Invalid number of fields for GET_MESSAGES. Expected 2 got {nb_req_fields}"
                 connection_socket.send(response.encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
             board_title = request_fields[1]
@@ -86,6 +95,7 @@ class Server: # requires socket
                 print("ERROR\t\tRequested board does not exist")
                 response = f"FAIL;Requested board does not exist"
                 connection_socket.send(response.encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NAME"
 
             response += "SUCCESS"
@@ -108,6 +118,7 @@ class Server: # requires socket
                     #break
 
             connection_socket.send(response.encode())
+            self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         elif command == "POST_MESSAGE":
@@ -115,6 +126,7 @@ class Server: # requires socket
                 print("ERROR\t\tInvalid number of fields in request!")
                 response = f"FAIL;Invalid number of fields for POST_MESSAGE. Expected 4 got {nb_req_fields}"
                 connection_socket.send(response.encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
             board_title = request_fields[1]
@@ -123,6 +135,7 @@ class Server: # requires socket
                 print("ERROR\t\tRequested board does not exist")
                 response = f"FAIL;Requested board does not exist"
                 connection_socket.send(response.encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NAME"
 
             response += "SUCCESS"
@@ -134,18 +147,20 @@ class Server: # requires socket
             file_name = f"{file_time}-{message_title}"
 
             # Create and write message to file. Then close.
-            print(f"{self.board_list[board_title]}{file_name}")
+            # Obviously susceptible to path traversal
             fh = open(f"{self.board_list[board_title]}{file_name}", mode='w')
             fh.write(message)
             fh.close()
 
             connection_socket.send(response.encode())
+            self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         else:
             print("ERROR\t\tRequested Command does not exist")
             response = f"FAIL;Requested command does not exist"
             connection_socket.send(response.encode())
+            self.logger.write(command, False, *connection_socket.getpeername())
             return "UNKNOWN_COMMAND"
 
 if __name__ == '__main__':

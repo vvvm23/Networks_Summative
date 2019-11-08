@@ -78,11 +78,32 @@ def handle_response(command, response_fields):
 # Connected to server. Returns socket object
 def connect(server_ip, server_port):
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((server_ip, server_port))
+    try:
+        client_socket.connect((server_ip, server_port))
+    except ConnectionRefusedError:
+        print("ERROR:\tNo connection established. Target machine refused.")
+        return
+    except OSError:
+        print("ERROR:\tNo connection established. Unreachable network.")
+        return
+    except OverflowError:
+        print("ERROR:\tPort must be in range 0-65535.")
+        return
+    except:
+        raise
+
     return client_socket
 
 def display_menu(server_ip, server_port):
+    if server_port < 1 or server_port > 65535:
+        print("ERROR:\tPort must be in range 0-65535.")
+        print("Terminating..")
+        exit()
+
     socket = connect(server_ip, server_port)
+    if not socket:
+        print("Terminating..")
+        exit()
 
     response_fields = send_request("GET_BOARDS", socket)
     if not type(response_fields) == list:
@@ -105,7 +126,7 @@ def display_menu(server_ip, server_port):
             print("Enter board number:")
             user_input = input("> ")
             if not user_input in boards_dict:
-                print("Board does not exist.")
+                print("ERROR:\tBoard does not exist.")
                 continue
             post_params.append(boards_dict[user_input])
 
@@ -120,24 +141,37 @@ def display_menu(server_ip, server_port):
             post_params.append(user_input)
 
             socket = connect(server_ip, server_port)
+            if not socket:
+                continue
+
             response_fields = send_request("POST_MESSAGE", socket, post_params)
             if not type(response_fields) == list:
-                exit() # Failed at first request. Terminating.
+                socket.close()
+                continue
 
             handle_response("POST_MESSAGE", response_fields)
             socket.close()
 
         elif user_input in boards_dict:
             socket = connect(server_ip, server_port)
+            if not socket:
+                continue
+
             response_fields = send_request("GET_MESSAGES", socket, [boards_dict[user_input]])
             if not type(response_fields) == list:
-                exit() # Failed at first request. Terminating.
+                socket.close()
+                continue
+
             handle_response("GET_MESSAGES", response_fields)
             socket.close()
         else:
             pass
-
-    socket.close()
+    
+    if socket:
+        socket.close()
 
 if __name__ == '__main__':
-    display_menu(sys.argv[1], int(sys.argv[2]))
+    if len(sys.argv) == 3:
+        display_menu(sys.argv[1], int(sys.argv[2]))
+    else:
+        print("Usage: python client.py [SERVER IP] [SERVER PORT]")
