@@ -3,6 +3,10 @@ import os # For getting list of dirs and files
 import socket # For socket programming
 import time # For getting time for filename generation
 
+class Logger:
+    def __init__(self):
+        pass
+
 class Server: # requires socket
     def __init__(self, listen_ip, server_port):
         self.server_port = server_port
@@ -90,7 +94,8 @@ class Server: # requires socket
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
                 for i, f in enumerate(files):
                     # Open file and add contents to response. Then close file.
-                    f = f"{root}{self.board_list[board_title]}{f}"
+                    #f = f"{root}{self.board_list[board_title]}{f}"
+                    f = f"{root}{f}"
                     fh = open(f)
                     f_contents = fh.read()
                     fh.close()
@@ -100,7 +105,7 @@ class Server: # requires socket
 
                     if i > 99:
                         break
-                    break
+                    #break
 
             connection_socket.send(response.encode())
             return "SUCCESS"
@@ -129,7 +134,8 @@ class Server: # requires socket
             file_name = f"{file_time}-{message_title}"
 
             # Create and write message to file. Then close.
-            fh.open(f"./board/{self.board_list[board_title]}{file_name}")
+            print(f"{self.board_list[board_title]}{file_name}")
+            fh = open(f"{self.board_list[board_title]}{file_name}", mode='w')
             fh.write(message)
             fh.close()
 
@@ -144,3 +150,4 @@ class Server: # requires socket
 
 if __name__ == '__main__':
     server = Server(sys.argv[1], int(sys.argv[2])) # validate this.
+    server.listen()
