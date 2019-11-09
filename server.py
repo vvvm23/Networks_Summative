@@ -8,9 +8,14 @@ class Logger:
         self.log_file = log_file
 
     def write(self, command, success, address, port):
-        f = open(self.log_file, mode='a')
-        f.write(f"{address}:{port}\t{time.strftime('%d/%m/%Y %H:%M:%S')}\t{command}\t{'OK' if success else 'Error'}\n")
-        f.close()
+        try:
+            f = open(self.log_file, mode='a')
+            f.write(f"{address}:{port}\t{time.strftime('%d/%m/%Y %H:%M:%S')}\t{command}\t{'OK' if success else 'Error'}\n")
+            f.close()
+        except Exception as e:
+            print("ERROR:\tFailed to write to logger.")
+            print(e)
+
 
 class Server: # requires socket
     def __init__(self, listen_ip, server_port):
@@ -27,26 +32,43 @@ class Server: # requires socket
             for d in dirs:
                 self.board_list[f"{d}".replace('_', ' ')] = f"{root}{d}/"
             break
-        print(self.board_list)
 
     def _bind(self):
         print(f"Creating socket at port {self.server_port}.. ", end='')
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((self.listen_ip, self.server_port))
+        try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.bind((self.listen_ip, self.server_port))
+        except Exception as e:
+            print("Failure.\nERROR:\tFailed to create socket.")
+            print(e)
+            print("Terminating..")
+            exit()
         print("Done.")
 
     def listen(self):
-        if not self.server_socket: # Does this catch if server_socket does not exist?
+        if not self.server_socket:
             print("ERROR:\t\tSocket not bound! Terminating!")
             exit()
 
         print(f"Starting Server Listening.. ", end='')
-        self.server_socket.listen(1)
+        try:
+            self.server_socket.listen(1)
+        except Exception as e:
+            print("Failure.\nERROR:\tFailed to start listening.")
+            print(e)
+            print("Terminating..")
+            exit()
         print("Done.")
 
         print("Entering Server Loop.")
         while True:
-            connection_socket, address = self.server_socket.accept()
+            try:
+                connection_socket, address = self.server_socket.accept()
+            except Exception as e:
+                print("ERROR:\tFailed to accept connection!")
+                print(e)
+                continue
+
             print(f"Received connection from {address}")
             code = self.handle(connection_socket)
             if not code == "SUCCESS":
@@ -56,12 +78,21 @@ class Server: # requires socket
 
     def handle(self, connection_socket):
         # Receive and split incoming message
-        request_string = connection_socket.recv(self.buffer_size).decode()
+        try:
+            request_string = connection_socket.recv(self.buffer_size).decode()
+        except socket.timeout as e:
+            print("ERROR:\tConnection timed out after 10 seconds.")
+            return "CONNECTION_TIMEOUT"
+        except Exception as e:
+            print("ERROR:\tFailed to receive incoming connection.")
+            print(e)
+            return "ERROR_GENERIC"
+
         request_fields = request_string.split(';')
 
         response = ""
 
-        nb_req_fields = len(request_fields) # Fpr checking in nb. parameters correct
+        nb_req_fields = len(request_fields) # For checking in nb. parameters correct
         command = request_fields[0]
 
         if command == "GET_BOARDS":
@@ -102,13 +133,25 @@ class Server: # requires socket
 
             # TODO: Sort by most recent 100
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
+                # A bit of python one liner gore.
+                # Strips /, returns last portion (to get file name), splits by - and returns date, before rejoining.
+                # Gets time value in milliseconds and uses to sort in reverse order
+                files.sort(key=lambda x: time.strptime('-'.join(x.split('/')[-1].split('-')[:2]), "%Y%m%d-%H%M%S"), reverse=True)
+
                 for i, f in enumerate(files):
                     # Open file and add contents to response. Then close file.
                     #f = f"{root}{self.board_list[board_title]}{f}"
-                    f = f"{root}{f}"
-                    fh = open(f)
-                    f_contents = fh.read()
-                    fh.close()
+
+                    try:
+                        print(f"{root}{f}")
+                        f = f"{root}{f}"
+                        fh = open(f)
+                        f_contents = fh.read()
+                        fh.close()
+                    except:
+                        print("ERROR:\tFailed to read file {root}{f}")
+                        print(e)
+                        continue
 
                     message_title = f.split('-')[2] # Append title before contents delimited with '-'
                     response += f";{message_title}-{f_contents}"
@@ -148,9 +191,16 @@ class Server: # requires socket
 
             # Create and write message to file. Then close.
             # Obviously susceptible to path traversal
-            fh = open(f"{self.board_list[board_title]}{file_name}", mode='w')
-            fh.write(message)
-            fh.close()
+            try:
+                fh = open(f"{self.board_list[board_title]}{file_name}", mode='w')
+                fh.write(message)
+                fh.close()
+            except:
+                print("ERROR:\tFailed to write to file {self.board_list[board_title]}{file_name}")
+                print(e)
+                response = f"FAIL;Failed to write message!"
+                connection_socket.send(response.encode)
+                return "WRITE_FAIL"
 
             connection_socket.send(response.encode())
             self.logger.write(command, True, *connection_socket.getpeername())
