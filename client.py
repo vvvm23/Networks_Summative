@@ -31,6 +31,7 @@ def send_request(command, client_socket, params=[]):
         request += f";{params[0]}"
         request += f";{params[1]}"
         request += f";{params[2]}"
+        request.replace(' ', '_')
         client_socket.send(request.encode())
     else:
         print(f"ERROR:\t\tUnknown command '{command}'")
@@ -39,12 +40,11 @@ def send_request(command, client_socket, params=[]):
     # Await and then handle response
     try:
         response = client_socket.recv(4096).decode()
-    except socket.timeout as e:
+    except socket.timeout:
         print("ERROR:\tConnection timed out after 10 seconds.")
         return "CONNECTION_TIMEOUT"
     except:
         raise
-        exit()
 
     response_fields = response.split(';')
 
@@ -55,9 +55,9 @@ def send_request(command, client_socket, params=[]):
 def handle_response(command, response_fields):
 
     if not response_fields[0] == "SUCCESS":
-            print("ERROR:\tAn error occured while handling the request")
-            print(f"ERROR:\t{response_fields[1]}")
-            return
+        print("ERROR:\tAn error occured while handling the request")
+        print(f"ERROR:\t{response_fields[1]}")
+        return
 
     response_fields = response_fields[1:]
 
@@ -94,7 +94,7 @@ def connect(server_ip, server_port):
     except OverflowError:
         print("ERROR:\tPort must be in range 0-65535.")
         return
-    except client_socket.timeout:
+    except socket.timeout:
         print("ERROR:\tConnection timed out after 10 seconds.")
         return
     except:

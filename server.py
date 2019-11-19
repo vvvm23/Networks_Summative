@@ -21,7 +21,7 @@ class Server: # requires socket
     def __init__(self, listen_ip, server_port):
         self.server_port = server_port
         self.listen_ip = listen_ip
-        self.buffer_size = 4096
+        self.buffer_size = 1024
         self._generate_board_list() # Generate dict of boards
         self._bind() # Bind to server_port
         self.logger = Logger("server.log")
@@ -106,7 +106,7 @@ class Server: # requires socket
             response += "SUCCESS"
             # Iterate through board titles and add to response. Delimit with ;
             for title in self.board_list:
-                response += f";{title}"
+                response += f";{title.replace(' ', '_')}"
 
             connection_socket.send(response.encode())
             self.logger.write(command, True, *connection_socket.getpeername())
@@ -120,7 +120,7 @@ class Server: # requires socket
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
-            board_title = request_fields[1]
+            board_title = request_fields[1].replace('_', ' ')
 
             if not board_title in self.board_list:
                 print("ERROR\t\tRequested board does not exist")
@@ -131,9 +131,7 @@ class Server: # requires socket
 
             response += "SUCCESS"
 
-            # TODO: Sort by most recent 100
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
-                # A bit of python one liner gore.
                 # Strips /, returns last portion (to get file name), splits by - and returns date, before rejoining.
                 # Gets time value in milliseconds and uses to sort in reverse order
                 files.sort(key=lambda x: time.strptime('-'.join(x.split('/')[-1].split('-')[:2]), "%Y%m%d-%H%M%S"), reverse=True)
@@ -143,7 +141,6 @@ class Server: # requires socket
                     #f = f"{root}{self.board_list[board_title]}{f}"
 
                     try:
-                        print(f"{root}{f}")
                         f = f"{root}{f}"
                         fh = open(f)
                         f_contents = fh.read()
@@ -160,6 +157,7 @@ class Server: # requires socket
                         break
                     #break
 
+            response = response.replace(' ', '_')
             connection_socket.send(response.encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
@@ -172,7 +170,7 @@ class Server: # requires socket
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
-            board_title = request_fields[1]
+            board_title = request_fields[1].replace('_', ' ')
 
             if not board_title in self.board_list:
                 print("ERROR\t\tRequested board does not exist")
@@ -192,10 +190,11 @@ class Server: # requires socket
             # Create and write message to file. Then close.
             # Obviously susceptible to path traversal
             try:
+                # Could be susceptible to directory traversal
                 fh = open(f"{self.board_list[board_title]}{file_name}", mode='w')
                 fh.write(message)
                 fh.close()
-            except:
+            except Exception as e:
                 print("ERROR:\tFailed to write to file {self.board_list[board_title]}{file_name}")
                 print(e)
                 response = f"FAIL;Failed to write message!"
