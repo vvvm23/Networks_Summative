@@ -2,6 +2,7 @@ import sys # Get system arguments.
 import os # For getting list of dirs and files
 import socket # For socket programming
 import time # For getting time for filename generation
+import json
 
 class Logger:
     def __init__(self, log_file):
@@ -79,7 +80,7 @@ class Server: # requires socket
     def handle(self, connection_socket):
         # Receive and split incoming message
         try:
-            request_string = connection_socket.recv(self.buffer_size).decode()
+            request = json.loads(connection_socket.recv(self.buffer_size).decode())
         except socket.timeout as e:
             print("ERROR:\tConnection timed out after 10 seconds.")
             return "CONNECTION_TIMEOUT"
@@ -88,49 +89,51 @@ class Server: # requires socket
             print(e)
             return "ERROR_GENERIC"
 
-        request_fields = request_string.split(';')
+        response = {}
 
-        response = ""
-
-        nb_req_fields = len(request_fields) # For checking in nb. parameters correct
-        command = request_fields[0]
+        nb_req_fields = len(request) # For checking in nb. parameters correct
+        command = request["COMMAND"]
 
         if command == "GET_BOARDS":
             if not nb_req_fields == 1:
                 print("ERROR:\t\tInvalid number of fields in request!")
-                response = f"FAIL;Invalid number of fields for GET_BOARDS. Expected 1 got {nb_req_fields}"
-                connection_socket.send(response.encode())
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Invalid number of fields for GET_BOARDS. Expected 1 got {nb_req_fields}"
+                connection_socket.send(json.dumps(response).encode())
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
-            response += "SUCCESS"
-            # Iterate through board titles and add to response. Delimit with ;
+            response["CODE"] = "SUCCESS"
+            # Iterate through board titles and add to response.
+            response["BOARDS"] = []
             for title in self.board_list:
-                response += f";{title.replace(' ', '_')}"
+                response['BOARDS'].append(f"{title.replace(' ', '_')}")
 
-            connection_socket.send(response.encode())
+            connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         elif command == "GET_MESSAGES":
             if not nb_req_fields == 2:
                 print("ERROR\t\tInvalid number of fields in request!")
-                response = f"FAIL;Invalid number of fields for GET_MESSAGES. Expected 2 got {nb_req_fields}"
-                connection_socket.send(response.encode())
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Invalid number of fields for GET_MESSAGES. Expected 2 got {nb_req_fields}"
+                connection_socket.send(json.dumps(response).encode())
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
-            board_title = request_fields[1].replace('_', ' ')
+            board_title = request["BOARD"].replace('_', ' ')
 
             if not board_title in self.board_list:
                 print("ERROR\t\tRequested board does not exist")
-                response = f"FAIL;Requested board does not exist"
-                connection_socket.send(response.encode())
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Requested board does not exist"
+                connection_socket.send(json.dumps(response).encode())
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NAME"
 
-            response += "SUCCESS"
-
+            response["CODE"] = "SUCCESS"
+            response["MESSAGES"] = []
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
                 # Strips /, returns last portion (to get file name), splits by - and returns date, before rejoining.
                 # Gets time value in milliseconds and uses to sort in reverse order
@@ -151,37 +154,39 @@ class Server: # requires socket
                         continue
 
                     message_title = f.split('-')[2] # Append title before contents delimited with '-'
-                    response += f";{message_title}-{f_contents}"
+                    response["MESSAGES"].append((message_title.replace(' ', '_'), f_contents.replace(' ', '_')))
 
                     if i > 99:
                         break
                     #break
 
-            response = response.replace(' ', '_')
-            connection_socket.send(response.encode())
+            connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         elif command == "POST_MESSAGE":
             if not nb_req_fields == 4: #maybe remove for ; in message? or make < and concat further fields
                 print("ERROR\t\tInvalid number of fields in request!")
-                response = f"FAIL;Invalid number of fields for POST_MESSAGE. Expected 4 got {nb_req_fields}"
-                connection_socket.send(response.encode())
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Invalid number of fields for POST_MESSAGE. Expected 4 got {nb_req_fields}"
+                
+                connection_socket.send(json.dumps(response).encode())
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NB_REQ"
 
-            board_title = request_fields[1].replace('_', ' ')
+            board_title = request["BOARD"].replace('_', ' ')
 
             if not board_title in self.board_list:
                 print("ERROR\t\tRequested board does not exist")
-                response = f"FAIL;Requested board does not exist"
-                connection_socket.send(response.encode())
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Requested board does not exist"
+                connection_socket.send(json.dumps(response).encode())
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NAME"
 
-            response += "SUCCESS"
-            message_title = request_fields[2].replace(' ', '_')
-            message = request_fields[3] # sanitise this
+            response["CODE"] = "SUCCESS"
+            message_title = request["TITLE"].replace(' ', '_')
+            message = request["MESSAGE"].replace(' ', '_') 
 
             # Format filename as requested
             file_time = time.strftime("%Y%m%d-%H%M%S")
@@ -197,18 +202,20 @@ class Server: # requires socket
             except Exception as e:
                 print("ERROR:\tFailed to write to file {self.board_list[board_title]}{file_name}")
                 print(e)
-                response = f"FAIL;Failed to write message!"
-                connection_socket.send(response.encode)
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Failed to write message!"
+                connection_socket.send(json.dumps(response).encode)
                 return "WRITE_FAIL"
 
-            connection_socket.send(response.encode())
+            connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         else:
             print("ERROR\t\tRequested Command does not exist")
-            response = f"FAIL;Requested command does not exist"
-            connection_socket.send(response.encode())
+            response["CODE"] = "FAIL"
+            response["ERROR_MESSAGE"] = f"Requested command does not exist"
+            connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, False, *connection_socket.getpeername())
             return "UNKNOWN_COMMAND"
 

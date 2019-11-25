@@ -1,9 +1,12 @@
 import socket
 import sys
+import json
 
 # Encodes command and parameters then sends. Then waits for response.
 def send_request(command, client_socket, params=[]):
     nb_params = len(params)
+
+    request = {}
 
     # Sending Request
     if command == "GET_BOARDS":
@@ -11,66 +14,62 @@ def send_request(command, client_socket, params=[]):
             print(f"ERROR:\t\tInvalid invalid number of parameters. Expected 0, got {nb_params}")
             return "INVALID_NB_PARAM"
         
-        client_socket.send(command.encode())
+        request["COMMAND"] = "GET_BOARDS"
+        client_socket.send(json.dumps(request).encode())
 
     elif command == "GET_MESSAGES":
         if not nb_params == 1:
             print(f"ERROR:\t\tInvalid invalid number of parameters. Expected 1, got {nb_params}")
             return "INVALID_NB_PARAM"
 
-        request = command
-        request += f";{params[0]}"
-        client_socket.send(request.encode())
+        request["COMMAND"] = "GET_MESSAGES"
+        request["BOARD"] = params[0]
+        client_socket.send(json.dumps(request).encode())
 
     elif command == "POST_MESSAGE":
         if not nb_params == 3:
             print(f"ERROR:\t\tInvalid invalid number of parameters. Expected 3, got {nb_params}")
             return "INVALID_NB_PARAM"
-        request = command
-        
-        request += f";{params[0]}"
-        request += f";{params[1]}"
-        request += f";{params[2]}"
-        request.replace(' ', '_')
-        client_socket.send(request.encode())
+        request["COMMAND"] = command
+        request["BOARD"] = params[0]
+        request["TITLE"] = params[1].replace(' ', '_')
+        request["MESSAGE"] = params[2].replace(' ', '_')
+
+        client_socket.send(json.dumps(request).encode())
     else:
         print(f"ERROR:\t\tUnknown command '{command}'")
         return "UNKNOWN_COMMAND"
 
     # Await and then handle response
     try:
-        response = client_socket.recv(4096).decode()
+        response = json.loads(client_socket.recv(4096).decode())
     except socket.timeout:
         print("ERROR:\tConnection timed out after 10 seconds.")
         return "CONNECTION_TIMEOUT"
     except:
         raise
 
-    response_fields = response.split(';')
-
     # close socket in calling function
-    return response_fields
+    return response
 
 # This function should handle the results of all responses. including printing
-def handle_response(command, response_fields):
+def handle_response(command, response):
 
-    if not response_fields[0] == "SUCCESS":
+    if not response["CODE"] == "SUCCESS":
         print("ERROR:\tAn error occured while handling the request")
-        print(f"ERROR:\t{response_fields[1]}")
+        print(f"ERROR:\t{response['ERROR_MESSAGE']}")
         return
-
-    response_fields = response_fields[1:]
 
     if command == "GET_BOARDS":
         print("Available Boards:")
-        print('\n'.join(f"\t{i+1}. {b.replace('_', ' ')}" for i, b in enumerate(response_fields)))
+        print('\n'.join(f"\t{i+1}. {b.replace('_', ' ')}" for i, b in enumerate(response["BOARDS"])))
         boards_dict = {}
-        for i, b in enumerate(response_fields):
+        for i, b in enumerate(response["BOARDS"]):
             boards_dict[str(i+1)] = b
         return boards_dict
 
     elif command == "GET_MESSAGES":
-        print('\n'.join(f"{m.split('-')[0].replace('_', ' ')}:\n\t{m.split('-')[1].replace('_', ' ')}" for m in response_fields))
+        print('\n'.join(f"{m[0].replace('_', ' ')}:\n\t{m[1].replace('_', ' ')}" for m in response["MESSAGES"]))
 
     elif command == "POST_MESSAGE":
         print("Successfully posted message to board.")
@@ -113,14 +112,14 @@ def display_menu(server_ip, server_port):
         print("Terminating..")
         exit()
 
-    response_fields = send_request("GET_BOARDS", client_socket)
-    if not type(response_fields) == list:
+    response = send_request("GET_BOARDS", client_socket)
+    if not type(response) == dict:
         if client_socket:
             client_socket.close()
         print("Terminating..")
         exit() # Failed at first request. Terminating.
 
-    boards_dict = handle_response("GET_BOARDS", response_fields)
+    boards_dict = handle_response("GET_BOARDS", response)
     client_socket.close()
 
     while True:
@@ -155,12 +154,12 @@ def display_menu(server_ip, server_port):
             if not client_socket:
                 continue
 
-            response_fields = send_request("POST_MESSAGE", client_socket, post_params)
-            if not type(response_fields) == list:
+            response = send_request("POST_MESSAGE", client_socket, post_params)
+            if not type(response) == dict:
                 client_socket.close()
                 continue
 
-            handle_response("POST_MESSAGE", response_fields)
+            handle_response("POST_MESSAGE", response)
             client_socket.close()
 
         elif user_input in boards_dict:
@@ -168,12 +167,12 @@ def display_menu(server_ip, server_port):
             if not socket:
                 continue
 
-            response_fields = send_request("GET_MESSAGES", client_socket, [boards_dict[user_input]])
-            if not type(response_fields) == list:
+            response = send_request("GET_MESSAGES", client_socket, [boards_dict[user_input]])
+            if not type(response) == dict:
                 client_socket.close()
                 continue
 
-            handle_response("GET_MESSAGES", response_fields)
+            handle_response("GET_MESSAGES", response)
             client_socket.close()
         elif user_input.isdigit():
             print("ERROR:\tBoard specified does not exist.")
