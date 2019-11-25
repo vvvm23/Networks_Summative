@@ -2,31 +2,32 @@ import sys # Get system arguments.
 import os # For getting list of dirs and files
 import socket # For socket programming
 import time # For getting time for filename generation
-import json
+import json # For encoding messages
 
 class Logger:
     def __init__(self, log_file):
-        self.log_file = log_file
+        self.log_file = log_file # Set log file path
 
     def write(self, command, success, address, port):
         try:
-            f = open(self.log_file, mode='a')
+            f = open(self.log_file, mode='a') # Append if it already exists
+            # Write a log entry using this lovely line of code
             f.write(f"{address}:{port}\t{time.strftime('%d/%m/%Y %H:%M:%S')}\t{command}\t{'OK' if success else 'Error'}\n")
-            f.close()
+            f.close() # Close the file so we can view the update to the log immediately
         except Exception as e:
             print("ERROR:\tFailed to write to logger.")
             print(e)
 
-
 class Server: # requires socket
-    def __init__(self, listen_ip, server_port):
-        self.server_port = server_port
-        self.listen_ip = listen_ip
-        self.buffer_size = 1024
+    def __init__(self, listen_ip, server_port, is_logging=True):
+        self.server_port = server_port # Listening server port
+        self.listen_ip = listen_ip # IP to listen on
+        self.buffer_size = 4096 # Receive message buffer size
         self._generate_board_list() # Generate dict of boards
         self._bind() # Bind to server_port
-        self.logger = Logger("server.log")
+        self.logger = Logger("server.log") if is_logging else None # Create logger file
 
+    # Generates list of boards
     def _generate_board_list(self):
         self.board_list = {}
         for root, dirs, _ in os.walk('./board/'):
@@ -34,6 +35,7 @@ class Server: # requires socket
                 self.board_list[f"{d}".replace('_', ' ')] = f"{root}{d}/"
             break
 
+    # Bind socket to server port
     def _bind(self):
         print(f"Creating socket at port {self.server_port}.. ", end='')
         try:
@@ -46,6 +48,7 @@ class Server: # requires socket
             exit()
         print("Done.")
 
+    # Start listening Loop and call functions to handle incoming requests
     def listen(self):
         if not self.server_socket:
             print("ERROR:\t\tSocket not bound! Terminating!")
@@ -77,6 +80,7 @@ class Server: # requires socket
             connection_socket.close()
             print(f"Closed connection from {address}")
 
+    # Function to handle incoming requests
     def handle(self, connection_socket):
         # Receive and split incoming message
         try:
@@ -94,7 +98,7 @@ class Server: # requires socket
         nb_req_fields = len(request) # For checking in nb. parameters correct
         command = request["COMMAND"]
 
-        if command == "GET_BOARDS":
+        if command == "GET_BOARDS": # If request is for getting names of all boards
             if not nb_req_fields == 1:
                 print("ERROR:\t\tInvalid number of fields in request!")
                 response["CODE"] = "FAIL"
@@ -113,7 +117,7 @@ class Server: # requires socket
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
-        elif command == "GET_MESSAGES":
+        elif command == "GET_MESSAGES": # If request is for getting all messages in a board
             if not nb_req_fields == 2:
                 print("ERROR\t\tInvalid number of fields in request!")
                 response["CODE"] = "FAIL"
@@ -133,7 +137,7 @@ class Server: # requires socket
                 return "INVALID_NAME"
 
             response["CODE"] = "SUCCESS"
-            response["MESSAGES"] = []
+            response["MESSAGES"] = [] #  Array of (title, message) tuples
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
                 # Strips /, returns last portion (to get file name), splits by - and returns date, before rejoining.
                 # Gets time value in milliseconds and uses to sort in reverse order
@@ -141,8 +145,6 @@ class Server: # requires socket
 
                 for i, f in enumerate(files):
                     # Open file and add contents to response. Then close file.
-                    #f = f"{root}{self.board_list[board_title]}{f}"
-
                     try:
                         f = f"{root}{f}"
                         fh = open(f)
@@ -156,16 +158,15 @@ class Server: # requires socket
                     message_title = f.split('-')[2] # Append title before contents delimited with '-'
                     response["MESSAGES"].append((message_title.replace(' ', '_'), f_contents.replace(' ', '_')))
 
-                    if i > 99:
+                    if i > 99: # Only print first 100
                         break
-                    #break
 
             connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
-        elif command == "POST_MESSAGE":
-            if not nb_req_fields == 4: #maybe remove for ; in message? or make < and concat further fields
+        elif command == "POST_MESSAGE": # If request is for posting a message to a given board
+            if not nb_req_fields == 4:
                 print("ERROR\t\tInvalid number of fields in request!")
                 response["CODE"] = "FAIL"
                 response["ERROR_MESSAGE"] = f"Invalid number of fields for POST_MESSAGE. Expected 4 got {nb_req_fields}"
@@ -193,7 +194,6 @@ class Server: # requires socket
             file_name = f"{file_time}-{message_title}"
 
             # Create and write message to file. Then close.
-            # Obviously susceptible to path traversal
             try:
                 # Could be susceptible to directory traversal
                 fh = open(f"{self.board_list[board_title]}{file_name}", mode='w')
@@ -211,7 +211,7 @@ class Server: # requires socket
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
-        else:
+        else: # If the request command is not recognised
             print("ERROR\t\tRequested Command does not exist")
             response["CODE"] = "FAIL"
             response["ERROR_MESSAGE"] = f"Requested command does not exist"
@@ -220,5 +220,12 @@ class Server: # requires socket
             return "UNKNOWN_COMMAND"
 
 if __name__ == '__main__':
-    server = Server(sys.argv[1], int(sys.argv[2])) # validate this.
+    ip_address = sys.argv[1]
+    port = int(sys.argv[2])
+    if port < 1 or port > 65535:
+        print("ERROR:\tPort must be in range 0-65535.")
+        print("Terminating..")
+        exit()
+
+    server = Server(ip_address, port)
     server.listen()
