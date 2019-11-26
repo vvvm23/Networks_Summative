@@ -204,7 +204,7 @@ class Server: # requires socket
                 print(e)
                 response["CODE"] = "FAIL"
                 response["ERROR_MESSAGE"] = f"Failed to write message!"
-                connection_socket.send(json.dumps(response).encode)
+                connection_socket.send(json.dumps(response).encode())
                 return "WRITE_FAIL"
 
             connection_socket.send(json.dumps(response).encode())
