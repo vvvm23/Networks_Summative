@@ -3,6 +3,10 @@ import os # For getting list of dirs and files
 import socket # For socket programming
 import time # For getting time for filename generation
 import json # For encoding messages
+import threading
+import _thread
+
+lock = threading.Lock()
 
 class Logger:
     def __init__(self, log_file):
@@ -73,12 +77,24 @@ class Server: # requires socket
                 print(e)
                 continue
 
+            lock.acquire()
             print(f"Received connection from {address}")
-            code = self.handle(connection_socket)
-            if not code == "SUCCESS":
-                print(f"ERROR:\t\t{code}")
-            connection_socket.close()
+            #code = self.handle(connection_socket)
+            #t_code = ["ERROR_GENERIC"]
+            _thread.start_new_thread(self._thread_handle, (connection_socket,))
+            #code = t_code[0]
+
+            #if not code == "SUCCESS":
+            #    print(f"ERROR:\t\t{code}")
+            #connection_socket.close()
             print(f"Closed connection from {address}")
+
+    def _thread_handle(self, socket):
+        code = self.handle(socket)
+        if not code == "SUCCESS":
+            print(f"ERROR:\t\t{code}")
+        socket.close()
+        lock.release()
 
     # Function to handle incoming requests
     def handle(self, connection_socket):
