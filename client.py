@@ -61,15 +61,22 @@ def handle_response(command, response):
         return
 
     if command == "GET_BOARDS": # Handles response to GET_BOARDS, printing board names nicely
-        print("Available Boards:")
-        print('\n'.join(f"\t{i+1}. {b.replace('_', ' ')}" for i, b in enumerate(response["BOARDS"])))
+        if len(response["BOARDS"]):
+            print("Available Boards:")
+            print('\n'.join(f"\t{i+1}. {b.replace('_', ' ')}" for i, b in enumerate(response["BOARDS"])))
+        else:
+            print("No Boards to Display..")
+            return
         boards_dict = {}
         for i, b in enumerate(response["BOARDS"]):
             boards_dict[str(i+1)] = b
         return boards_dict
 
     elif command == "GET_MESSAGES": # Handles response to GET_MESSAGES, printing messages nicely
-        print('\n'.join(f"{m[0].replace('_', ' ')}:\n\t{m[1].replace('_', ' ')}" for m in response["MESSAGES"]))
+        if len(response["MESSAGES"]):
+            print('\n'.join(f"{m[0].replace('_', ' ')}:\n\t{m[1].replace('_', ' ')}" for m in response["MESSAGES"]))
+        else:
+            print("No Messages to Display..")
 
     elif command == "POST_MESSAGE": # Simply informs the user the message was posted successfully.
         print("Successfully posted message to board.")
@@ -121,6 +128,11 @@ def display_menu(server_ip, server_port):
         exit() # Failed at first request. Terminating as we cannot continue.
 
     boards_dict = handle_response("GET_BOARDS", response)
+
+    if not type(boards_dict) == dict:
+        print("Terminating..")
+        exit()
+
     client_socket.close()
 
     # Enter menu loop

@@ -216,7 +216,7 @@ class Server: # requires socket
                 fh.write(message)
                 fh.close()
             except Exception as e:
-                print("ERROR:\tFailed to write to file {self.board_list[board_title]}{file_name}")
+                print(f"ERROR:\tFailed to write to file {self.board_list[board_title]}{file_name}")
                 print(e)
                 response["CODE"] = "FAIL"
                 response["ERROR_MESSAGE"] = f"Failed to write message!"
@@ -236,6 +236,10 @@ class Server: # requires socket
             return "UNKNOWN_COMMAND"
 
 if __name__ == '__main__':
+    if not len(sys.argv) == 3:
+        print("Incorrect Syntax!")
+        print("Usage: python server.py IP PORT")
+
     ip_address = sys.argv[1]
     port = int(sys.argv[2])
     if port < 1 or port > 65535:
