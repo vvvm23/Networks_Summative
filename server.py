@@ -154,12 +154,32 @@ class Server: # requires socket
 
             response["CODE"] = "SUCCESS"
             response["MESSAGES"] = [] #  Array of (title, message) tuples
+
+            if not os.path.isdir(f"./{self.board_list[board_title]}"):
+                print("ERROR\t\tRequested board is missing")
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Requested board is missing"
+                connection_socket.send(json.dumps(response).encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
+                return "MISSING_BOARD"
+
             for root, _, files in os.walk(f"./{self.board_list[board_title]}"):
                 # Strips /, returns last portion (to get file name), splits by - and returns date, before rejoining.
                 # Gets time value in milliseconds and uses to sort in reverse order
-                files.sort(key=lambda x: time.strptime('-'.join(x.split('/')[-1].split('-')[:2]), "%Y%m%d-%H%M%S"), reverse=True)
+                try:
+                    files.sort(key=lambda x: time.strptime('-'.join(x.split('/')[-1].split('-')[:2]), "%Y%m%d-%H%M%S"), reverse=True)
+                except:
+                    print("ERROR:\t\tInvalid message format")
+                    response["CODE"] = "FAIL"
+                    response["ERROR_MESSAGE"] = "Invalid message format"
+                    connection_socket.send(json.dumps(response).encode())
+                    self.logger.write(command, False, *connection_socket.getpeername())
+                    return "INVALID_MESSAGE"
 
                 for i, f in enumerate(files):
+                    if i > 99: # Only print first 100
+                        break
+                
                     # Open file and add contents to response. Then close file.
                     try:
                         f = f"{root}{f}"
@@ -172,10 +192,7 @@ class Server: # requires socket
                         continue
 
                     message_title = f.split('-')[2] # Append title before contents delimited with '-'
-                    response["MESSAGES"].append((message_title.replace(' ', '_'), f_contents.replace(' ', '_')))
-
-                    if i > 99: # Only print first 100
-                        break
+                    response["MESSAGES"].append((message_title.replace(' ', '_'), f_contents.replace(' ', '_')))           
 
             connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
@@ -200,6 +217,14 @@ class Server: # requires socket
                 connection_socket.send(json.dumps(response).encode())
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NAME"
+
+            if not os.path.isdir(f"./{self.board_list[board_title]}"):
+                print("ERROR\t\tRequested board is missing")
+                response["CODE"] = "FAIL"
+                response["ERROR_MESSAGE"] = f"Requested board is missing"
+                connection_socket.send(json.dumps(response).encode())
+                self.logger.write(command, False, *connection_socket.getpeername())
+                return "MISSING_BOARD"
 
             response["CODE"] = "SUCCESS"
             message_title = request["TITLE"].replace(' ', '_')
