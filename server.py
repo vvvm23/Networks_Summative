@@ -3,10 +3,8 @@ import os # For getting list of dirs and files
 import socket # For socket programming
 import time # For getting time for filename generation
 import json # For encoding messages
-import threading
+import threading # For handling threading (when multiple clients want to connect)
 import _thread
-
-lock = threading.Lock()
 
 class Logger:
     def __init__(self, log_file):
@@ -30,8 +28,9 @@ class Server: # requires socket
         self._generate_board_list() # Generate dict of boards
         self._bind() # Bind to server_port
         self.logger = Logger("server.log") if is_logging else None # Create logger file
+        self.lock = threading.Lock() # Threading lock. Keep contained in class for object reusabilitiy.
 
-    # Generates list of boards
+    # Generates list of boards by reading all directories in board
     def _generate_board_list(self):
         self.board_list = {}
         for root, dirs, _ in os.walk('./board/'):
@@ -54,7 +53,7 @@ class Server: # requires socket
 
     # Start listening Loop and call functions to handle incoming requests
     def listen(self):
-        if not self.server_socket:
+        if not self.server_socket: # Check if socket exists
             print("ERROR:\t\tSocket not bound! Terminating!")
             exit()
 
@@ -68,6 +67,7 @@ class Server: # requires socket
             exit()
         print("Done.")
 
+        # Loop indefinitely, accepting requests and handling them
         print("Entering Server Loop.")
         while True:
             try:
@@ -77,30 +77,25 @@ class Server: # requires socket
                 print(e)
                 continue
 
-            lock.acquire()
+            #self.lock.acquire()
             print(f"Received connection from {address}")
-            #code = self.handle(connection_socket)
-            #t_code = ["ERROR_GENERIC"]
+            # Start new thread and handler. Send socket with it
             _thread.start_new_thread(self._thread_handle, (connection_socket,))
-            #code = t_code[0]
-
-            #if not code == "SUCCESS":
-            #    print(f"ERROR:\t\t{code}")
-            #connection_socket.close()
             print(f"Closed connection from {address}")
 
+    # Function called by start_new_thread.
     def _thread_handle(self, socket):
-        code = self.handle(socket)
+        code = self.handle(socket) # Handle request
         if not code == "SUCCESS":
             print(f"ERROR:\t\t{code}")
-        socket.close()
-        lock.release()
+        socket.close() # Close socket
+        #self.lock.release() # Release lock
 
     # Function to handle incoming requests
     def handle(self, connection_socket):
         # Receive and split incoming message
         try:
-            request = json.loads(connection_socket.recv(self.buffer_size).decode())
+            request = json.loads(connection_socket.recv(self.buffer_size).decode()) # Decode request
         except socket.timeout as e:
             print("ERROR:\tConnection timed out after 10 seconds.")
             return "CONNECTION_TIMEOUT"
@@ -112,9 +107,10 @@ class Server: # requires socket
         response = {}
 
         nb_req_fields = len(request) # For checking in nb. parameters correct
-        command = request["COMMAND"]
+        command = request["COMMAND"] # Get type of request
 
         if command == "GET_BOARDS": # If request is for getting names of all boards
+            # If invalid number of fields, return error
             if not nb_req_fields == 1:
                 print("ERROR:\t\tInvalid number of fields in request!")
                 response["CODE"] = "FAIL"
@@ -129,11 +125,13 @@ class Server: # requires socket
             for title in self.board_list:
                 response['BOARDS'].append(f"{title.replace(' ', '_')}")
 
+            # Encode and send response JSON
             connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         elif command == "GET_MESSAGES": # If request is for getting all messages in a board
+            # If invalid number of fields, return error
             if not nb_req_fields == 2:
                 print("ERROR\t\tInvalid number of fields in request!")
                 response["CODE"] = "FAIL"
@@ -144,6 +142,7 @@ class Server: # requires socket
 
             board_title = request["BOARD"].replace('_', ' ')
 
+            # If the board title is not in the list of boards, throw error
             if not board_title in self.board_list:
                 print("ERROR\t\tRequested board does not exist")
                 response["CODE"] = "FAIL"
@@ -155,6 +154,7 @@ class Server: # requires socket
             response["CODE"] = "SUCCESS"
             response["MESSAGES"] = [] #  Array of (title, message) tuples
 
+            # If the board is missing when it should exist, throw error
             if not os.path.isdir(f"./{self.board_list[board_title]}"):
                 print("ERROR\t\tRequested board is missing")
                 response["CODE"] = "FAIL"
@@ -169,9 +169,10 @@ class Server: # requires socket
                 try:
                     files.sort(key=lambda x: time.strptime('-'.join(x.split('/')[-1].split('-')[:2]), "%Y%m%d-%H%M%S"), reverse=True)
                 except:
-                    print("ERROR:\t\tInvalid message format")
+                    # If not in specified format
+                    print("ERROR:\t\tInvalid message title format")
                     response["CODE"] = "FAIL"
-                    response["ERROR_MESSAGE"] = "Invalid message format"
+                    response["ERROR_MESSAGE"] = "Invalid message title format"
                     connection_socket.send(json.dumps(response).encode())
                     self.logger.write(command, False, *connection_socket.getpeername())
                     return "INVALID_MESSAGE"
@@ -179,7 +180,6 @@ class Server: # requires socket
                 for i, f in enumerate(files):
                     if i > 99: # Only print first 100
                         break
-                
                     # Open file and add contents to response. Then close file.
                     try:
                         f = f"{root}{f}"
@@ -194,11 +194,13 @@ class Server: # requires socket
                     message_title = f.split('-')[2] # Append title before contents delimited with '-'
                     response["MESSAGES"].append((message_title.replace(' ', '_'), f_contents.replace(' ', '_')))           
 
+            # Encode and send response JSON
             connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
 
         elif command == "POST_MESSAGE": # If request is for posting a message to a given board
+            # If invalid number of fields, throw error
             if not nb_req_fields == 4:
                 print("ERROR\t\tInvalid number of fields in request!")
                 response["CODE"] = "FAIL"
@@ -210,6 +212,7 @@ class Server: # requires socket
 
             board_title = request["BOARD"].replace('_', ' ')
 
+            # If board not in board list, throw error
             if not board_title in self.board_list:
                 print("ERROR\t\tRequested board does not exist")
                 response["CODE"] = "FAIL"
@@ -218,6 +221,7 @@ class Server: # requires socket
                 self.logger.write(command, False, *connection_socket.getpeername())
                 return "INVALID_NAME"
 
+            # If board is missing when it should exist, throw error
             if not os.path.isdir(f"./{self.board_list[board_title]}"):
                 print("ERROR\t\tRequested board is missing")
                 response["CODE"] = "FAIL"
@@ -248,6 +252,7 @@ class Server: # requires socket
                 connection_socket.send(json.dumps(response).encode())
                 return "WRITE_FAIL"
 
+            # Encode and send response JSON
             connection_socket.send(json.dumps(response).encode())
             self.logger.write(command, True, *connection_socket.getpeername())
             return "SUCCESS"
@@ -265,6 +270,7 @@ if __name__ == '__main__':
         print("Incorrect Syntax!")
         print("Usage: python server.py IP PORT")
 
+    # Get sys args and cast to type
     ip_address = sys.argv[1]
     port = int(sys.argv[2])
     if port < 1 or port > 65535:
@@ -272,5 +278,5 @@ if __name__ == '__main__':
         print("Terminating..")
         exit()
 
-    server = Server(ip_address, port)
-    server.listen()
+    server = Server(ip_address, port) # Initialise Server object
+    server.listen() # Call main Server function
